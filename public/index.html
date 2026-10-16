@@ -4,29 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Smart AI Lecture Note-Taker & Flashcards</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
 </head>
 <body class="bg-[#0b0f19] text-slate-100 min-h-screen p-4 sm:p-8">
   <div class="max-w-3xl mx-auto space-y-6">
     <div class="text-center space-y-2">
       <div class="inline-block bg-sky-950/80 border border-sky-800 text-sky-400 text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wider">Fast Serverless AI Engine</div>
       <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-400">Lecture Note-Taker AI</h1>
-      <p class="text-slate-400 text-sm">Transform lecture transcripts & notes into structured summaries and active-recall flashcards.</p>
+      <p class="text-slate-400 text-sm">Paste any YouTube lecture link OR notes to get unique summaries and flashcards.</p>
     </div>
 
-    <!-- Input Card -->
+    <!-- Input Box -->
     <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-4">
       <div class="flex items-center justify-between">
-        <label for="direct-text" class="text-xs font-semibold uppercase tracking-wider text-slate-400">Lecture Content / Transcript</label>
-        <button onclick="loadSampleData()" class="text-xs text-sky-400 hover:text-sky-300 font-medium underline">Load CS Sample Lecture</button>
+        <label for="user-input" class="text-xs font-semibold uppercase tracking-wider text-slate-400">YouTube URL or Study Notes</label>
+        <button onclick="loadSampleData()" class="text-xs text-sky-400 hover:text-sky-300 font-medium underline">Load CS Sample Data</button>
       </div>
 
-      <textarea id="direct-text" rows="6" placeholder="Paste YouTube transcript, lecture notes, or textbook chapter here..." class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl text-sm focus:outline-none focus:border-sky-500 text-slate-200"></textarea>
+      <textarea id="user-input" rows="4" placeholder="Paste YouTube link (e.g. [https://www.youtube.com/watch?v=6hfOvs8pY1k](https://www.youtube.com/watch?v=6hfOvs8pY1k)) or paste lecture text..." class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl text-sm focus:outline-none focus:border-sky-500 text-slate-200"></textarea>
 
       <button onclick="processLecture()" id="process-btn" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-medium py-2.5 rounded-xl text-sm transition">Generate Notes & Flashcards</button>
     </div>
 
-    <div id="loader" class="hidden text-center text-sky-400 text-sm py-3 animate-pulse">Analyzing lecture concepts & generating flashcards with Gemini Flash...</div>
+    <div id="loader" class="hidden text-center text-sky-400 text-sm py-3 animate-pulse">Analyzing content & synthesizing flashcards with Gemini...</div>
     <div id="error-box" class="hidden bg-rose-950/40 border border-rose-800 text-rose-300 p-4 rounded-xl text-sm leading-relaxed"></div>
 
     <!-- Output Section -->
@@ -45,18 +45,18 @@
 
   <script>
     function loadSampleData() {
-      document.getElementById('direct-text').value = `An algorithm is a step-by-step procedure or set of rules designed to solve a specific problem or perform a task. In computer science, algorithms are fundamental because they provide the blueprint for writing efficient code. Efficiency is commonly measured using Big O notation, which evaluates both time complexity (how runtime grows with input size n) and space complexity (memory usage). For example, Linear Search checks elements sequentially with O(n) time complexity, whereas Binary Search divides the search space in half with each iteration, achieving O(log n) complexity on sorted data. Choosing the optimal data structure and algorithm directly impacts system latency, hardware resource consumption, and cloud scalability.`;
+      document.getElementById('user-input').value = "[https://www.youtube.com/watch?v=6hfOvs8pY1k](https://www.youtube.com/watch?v=6hfOvs8pY1k)";
     }
 
     async function processLecture() {
-      const text = document.getElementById('direct-text').value.trim();
+      const inputVal = document.getElementById('user-input').value.trim();
       const loader = document.getElementById('loader');
       const errBox = document.getElementById('error-box');
       const results = document.getElementById('results');
       const btn = document.getElementById('process-btn');
 
-      if (!text) {
-        errBox.innerText = "Please paste lecture text or click 'Load CS Sample Lecture' first.";
+      if (!inputVal) {
+        errBox.innerText = "Please paste a YouTube link or text first.";
         errBox.classList.remove('hidden');
         return;
       }
@@ -70,7 +70,7 @@
         const res = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ direct_text: text })
+          body: JSON.stringify({ content: inputVal })
         });
 
         const data = await res.json();

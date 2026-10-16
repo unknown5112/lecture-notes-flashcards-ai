@@ -20,24 +20,51 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+def is_youtube_url(text: str) -> bool:
+    return bool(re.search(r'(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)[0-9A-Za-z_-]{11}', text))
+
 class LectureRequest(BaseModel):
-    direct_text: str
+    content: str
 
 @app.post("/api/generate")
 async def generate_notes(req: LectureRequest):
     if not GEMINI_API_KEY:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing in Vercel settings.")
 
-    text = req.direct_text.strip()
-    if len(text) < 20:
-        raise HTTPException(status_code=400, detail="Text too short. Please provide at least a couple of sentences.")
+    user_input = req.content.strip()
+    if len(user_input) < 10:
+        raise HTTPException(status_code=400, detail="Please enter a valid YouTube link or lecture text.")
 
-    prompt = f"""You are an elite academic educator. Analyze this study material:
-\"\"\"{text[:10000]}\"\"\"
+    # Agar YouTube link hai, toh Gemini ko direct video target karne do
+    if is_youtube_url(user_input):
+        prompt = f"""You are an elite academic educator.
+Watch and analyze this YouTube video thoroughly: {user_input}
 
 Generate:
-1. A structured summary with clear Key Takeaways.
-2. Exactly 5 active-recall Flashcards (question and short answer).
+1. A detailed, structured lecture summary specific to this video's unique discussion, key insights, and takeaways.
+2. Exactly 5 active-recall Flashcards directly testing concepts explained in this specific video.
+
+Return ONLY valid JSON matching this schema:
+{{
+  "summary": "markdown formatted notes",
+  "flashcards": [
+    {{"question": "Question 1", "answer": "Answer 1"}},
+    {{"question": "Question 2", "answer": "Answer 2"}},
+    {{"question": "Question 3", "answer": "Answer 3"}},
+    {{"question": "Question 4", "answer": "Answer 4"}},
+    {{"question": "Question 5", "answer": "Answer 5"}}
+  ]
+}}
+"""
+    else:
+        # Agar user ne custom text paste kiya hai
+        prompt = f"""You are an elite academic educator.
+Analyze this study lecture material:
+\"\"\"{user_input[:10000]}\"\"\"
+
+Generate:
+1. A detailed structured summary with key concepts and takeaways.
+2. Exactly 5 active-recall Flashcards (question and concise answer).
 
 Return ONLY valid JSON matching this schema:
 {{
