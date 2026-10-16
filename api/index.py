@@ -21,25 +21,25 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 def get_active_model():
-    """Dynamically finds the exact working model name for this specific API key."""
+    """Returns the recommended latest model, with dynamic fallback if needed."""
     try:
         available = [
             m.name for m in genai.list_models() 
             if 'generateContent' in m.supported_generation_methods
         ]
-        # Priority 1: Flash models
+        # Prefer gemini-3.8-flash first
         for m in available:
-            if "flash" in m.lower():
+            if "3.8-flash" in m:
                 return m
-        # Priority 2: Pro models
+        # Fallback to any other flash model that is not retired
         for m in available:
-            if "pro" in m.lower():
+            if "flash" in m.lower() and "2.5" not in m:
                 return m
         if available:
             return available[0]
     except Exception:
         pass
-    return "models/gemini-1.5-flash"
+    return "models/gemini-3.8-flash"
 
 class LectureRequest(BaseModel):
     direct_text: str
@@ -81,7 +81,7 @@ Format response strictly as valid JSON:
         resp = model.generate_content(prompt)
         raw_text = resp.text.strip()
 
-        # Clean JSON markdown fences if present
+        # Clean JSON markdown code blocks if present
         if raw_text.startswith("```"):
             raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
             raw_text = re.sub(r"\s*```$", "", raw_text)
