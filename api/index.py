@@ -5,7 +5,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 import google.generativeai as genai
 
 app = FastAPI()
@@ -39,42 +38,31 @@ class LectureRequest(BaseModel):
 @app.post("/api/generate")
 async def generate_notes(req: LectureRequest):
     if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY environment variable missing on Vercel.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing on Vercel environment.")
 
     video_id = extract_video_id(req.url)
     if not video_id:
-        raise HTTPException(status_code=400, detail="Invalid YouTube URL. Please provide a standard YouTube video link.")
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL.")
 
     transcript_text = ""
+    # Standard multi-language fetch
     try:
-        # Transcript list fetch karo (manually created + auto-generated dono ke liye)
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        
-        # Priority order: English -> Hindi -> Koi bhi available generated transcript
+        data = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB', 'hi'])
+        transcript_text = " ".join([item['text'] for item in data])
+    except Exception:
+        # Fallback to default without language filter
         try:
-            transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB', 'hi'])
-        except Exception:
-            # Agar primary languages na milein toh pehli available transcript utha lo
-            transcript = next(iter(transcript_list))
-
-        fetched_data = transcript.fetch()
-        transcript_text = " ".join([t['text'] for t in fetched_data])
-
-    except (TranscriptsDisabled, NoTranscriptFound):
-        raise HTTPException(
-            status_code=400, 
-            detail="This video does not have closed captions (CC/Subtitles) enabled by the creator. Please try a lecture video that has subtitles/CC turned on."
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Unable to fetch transcript: {str(e)}. Try testing with a video that has English CC enabled."
-        )
+            data = YouTubeTranscriptApi.get_transcript(video_id)
+            transcript_text = " ".join([item['text'] for item in data])
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Transcript extraction failed: {str(e)}"
+            )
 
     if not transcript_text.strip():
-        raise HTTPException(status_code=400, detail="Extracted transcript is empty.")
+        raise HTTPException(status_code=400, detail="Transcript text is empty.")
 
-    # Token limits ke hisaab se slice karo
     transcript_text = transcript_text[:12000]
 
     prompt = f"""You are an expert educator. Analyze this YouTube lecture transcript:
@@ -99,11 +87,10 @@ Return ONLY strict valid JSON matching this schema:
 
     try:
         model = genai.GenerativeModel(
-            "gemini-1.5-flash", 
+            "gemini-1.5-flash",
             generation_config={"response_mime_type": "application/json"}
         )
         resp = model.generate_content(prompt)
-        data = json.loads(resp.text)
-        return data
+        return json.loads(resp.text)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI generation error: {str(e)}")
