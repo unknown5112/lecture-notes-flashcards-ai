@@ -9,31 +9,31 @@
 <body class="bg-[#0b0f19] text-slate-100 min-h-screen p-4 sm:p-8">
   <div class="max-w-3xl mx-auto space-y-6">
     <div class="text-center space-y-2">
-      <div class="inline-block bg-sky-950/80 border border-sky-800 text-sky-400 text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wider">Zero-Failure Cloud AI</div>
+      <div class="inline-block bg-emerald-950/80 border border-emerald-800 text-emerald-400 text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wider">Client-Bypassed 100% Live AI</div>
       <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-indigo-400">Lecture Note-Taker AI</h1>
-      <p class="text-slate-400 text-sm">Generate structured summary and revision flashcards instantly.</p>
+      <p class="text-slate-400 text-sm">Automated transcript extraction & AI flashcard synthesis.</p>
     </div>
 
     <!-- Mode Selector Tabs -->
     <div class="flex border-b border-slate-800 gap-4 text-sm font-medium">
-      <button id="tab-url" onclick="switchTab('url')" class="pb-2 border-b-2 border-sky-500 text-sky-400">YouTube URL</button>
-      <button id="tab-paste" onclick="switchTab('paste')" class="pb-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">Paste Text / Transcript (100% Reliable)</button>
+      <button id="tab-url" onclick="switchTab('url')" class="pb-2 border-b-2 border-sky-500 text-sky-400">YouTube URL (Auto-Extract)</button>
+      <button id="tab-paste" onclick="switchTab('paste')" class="pb-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200">Manual Paste</button>
     </div>
 
     <!-- Input Box -->
     <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl shadow-xl space-y-3">
-      <div id="url-input-container" class="flex gap-3">
-        <input type="text" id="yt-url" placeholder="Paste YouTube Link (e.g. https://www.youtube.com/watch?v=...)" class="flex-1 bg-slate-950 border border-slate-700 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-sky-500">
+      <div id="url-input-container">
+        <input type="text" id="yt-url" placeholder="Paste YouTube Link (e.g. https://www.youtube.com/watch?v=6hfOvs8pY1k)" class="w-full bg-slate-950 border border-slate-700 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-sky-500">
       </div>
 
       <div id="paste-input-container" class="hidden">
-        <textarea id="direct-text" rows="5" placeholder="Paste any lecture transcript, video captions, or study notes here..." class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl text-sm focus:outline-none focus:border-sky-500"></textarea>
+        <textarea id="direct-text" rows="5" placeholder="Paste raw notes or transcript text here..." class="w-full bg-slate-950 border border-slate-700 p-3 rounded-xl text-sm focus:outline-none focus:border-sky-500"></textarea>
       </div>
 
       <button onclick="processLecture()" id="process-btn" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-medium py-2.5 rounded-xl text-sm transition">Generate Notes & Flashcards</button>
     </div>
 
-    <div id="loader" class="hidden text-center text-sky-400 text-sm py-3 animate-pulse">Extracting concepts & generating flashcards with Gemini...</div>
+    <div id="loader" class="hidden text-center text-sky-400 text-sm py-3 animate-pulse">Extracting subtitles from client & processing with Gemini...</div>
     <div id="error-box" class="hidden bg-rose-950/40 border border-rose-800 text-rose-300 p-4 rounded-xl text-sm leading-relaxed"></div>
 
     <!-- Output Section -->
@@ -67,9 +67,45 @@
       }
     }
 
+    function extractVideoId(url) {
+      const match = url.match(/(?:v=|\/|embed\/|shorts\/)([0-9A-Za-z_-]{11})/);
+      return match ? match[1] : null;
+    }
+
+    // Client-side subtitle extractor using public CORS proxy (bypasses cloud server IP blocks)
+    async function fetchClientTranscript(videoId) {
+      const corsProxy = "https://api.allorigins.win/raw?url=";
+      const targetUrl = encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`);
+      const res = await fetch(corsProxy + targetUrl);
+      if (!res.ok) throw new Error("Could not reach YouTube from client.");
+      const html = await res.text();
+
+      const tracksMatch = html.match(/"captionTracks":\s*(\[.*?\])/);
+      if (!tracksMatch) {
+        throw new Error("No closed captions (CC) found in this video.");
+      }
+
+      const tracks = JSON.parse(tracksMatch[1]);
+      const baseUrl = tracks[0].baseUrl;
+      if (!baseUrl) throw new Error("Caption stream URL unavailable.");
+
+      const captionRes = await fetch(corsProxy + encodeURIComponent(baseUrl));
+      const xmlData = await captionRes.text();
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlData, "text/xml");
+      const texts = xmlDoc.getElementsByTagName("text");
+
+      let fullText = "";
+      for (let i = 0; i < texts.length; i++) {
+        fullText += texts[i].textContent + " ";
+      }
+      return fullText.trim();
+    }
+
     async function processLecture() {
       const url = document.getElementById('yt-url').value.trim();
-      const directText = document.getElementById('direct-text').value.trim();
+      const manualText = document.getElementById('direct-text').value.trim();
       const loader = document.getElementById('loader');
       const errBox = document.getElementById('error-box');
       const results = document.getElementById('results');
@@ -81,12 +117,26 @@
       btn.disabled = true;
 
       try {
-        const payload = currentTab === 'url' ? { url: url } : { direct_text: directText };
+        let transcriptToSend = manualText;
+
+        if (currentTab === 'url') {
+          const videoId = extractVideoId(url);
+          if (!videoId) throw new Error("Invalid YouTube URL. Please check the link.");
+          loader.innerText = "Extracting video transcript via client gateway...";
+          transcriptToSend = await fetchClientTranscript(videoId);
+        }
+
+        if (!transcriptToSend || transcriptToSend.length < 20) {
+          throw new Error("Extracted text is empty or video doesn't have subtitles.");
+        }
+
+        loader.innerText = "Analyzing transcript & generating flashcards with Gemini...";
         const res = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({ direct_text: transcriptToSend })
         });
+
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Error generating notes');
 
