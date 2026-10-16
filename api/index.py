@@ -4,7 +4,6 @@ import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import youtube_transcript_api
 import google.generativeai as genai
 
 app = FastAPI()
@@ -21,15 +20,11 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-def extract_video_id(url: str) -> str:
-    patterns = [
-        r'(?:v=|\/|embed\/|shorts\/)([0-9A-Za-z_-]{11})',
-        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})'
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
+def extract_clean_url(url: str) -> str:
+    match = re.search(r'(?:v=|\/|embed\/|shorts\/)([0-9A-Za-z_-]{11})', url)
+    if match:
+        video_id = match.group(1)
+        return f"https://www.youtube.com/watch?v={video_id}"
     return None
 
 class LectureRequest(BaseModel):
@@ -38,43 +33,20 @@ class LectureRequest(BaseModel):
 @app.post("/api/generate")
 async def generate_notes(req: LectureRequest):
     if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing on Vercel environment.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY environment variable missing on Vercel.")
 
-    video_id = extract_video_id(req.url)
-    if not video_id:
-        raise HTTPException(status_code=400, detail="Invalid YouTube URL.")
+    clean_yt_url = extract_clean_url(req.url)
+    if not clean_yt_url:
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL. Please provide a valid YouTube video link.")
 
-    transcript_text = ""
-    try:
-        # Direct module-level instance invocation
-        ytt_api = getattr(youtube_transcript_api, "YouTubeTranscriptApi", youtube_transcript_api)
-        fetch_fn = getattr(ytt_api, "get_transcript", None)
+    prompt = f"""You are an expert academic educator.
+Analyze this YouTube video: {clean_yt_url}
 
-        if not fetch_fn:
-            raise Exception("Library method 'get_transcript' not accessible on runtime.")
+Generate:
+1. A structured summary highlighting the main concepts and key takeaways.
+2. 5 interactive revision flashcards (questions and answers).
 
-        try:
-            data = fetch_fn(video_id, languages=['en', 'en-US', 'en-GB', 'hi'])
-        except Exception:
-            data = fetch_fn(video_id)
-
-        transcript_text = " ".join([item['text'] for item in data])
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Transcript extraction failed: {str(e)}")
-
-    if not transcript_text.strip():
-        raise HTTPException(status_code=400, detail="Transcript text is empty.")
-
-    transcript_text = transcript_text[:12000]
-
-    prompt = f"""You are an expert educator. Analyze this YouTube lecture transcript:
-{transcript_text}
-
-Provide:
-1. A concise, structured summary highlighting key concepts.
-2. 5 revision flashcards with questions and direct answers.
-
-Return ONLY strict valid JSON matching this schema:
+Return the response in strict JSON format matching this schema:
 {{
   "summary": "markdown formatted notes",
   "flashcards": [
@@ -89,10 +61,14 @@ Return ONLY strict valid JSON matching this schema:
 
     try:
         model = genai.GenerativeModel(
-            "gemini-1.5-flash",
+            model_name="gemini-1.5-flash",
             generation_config={"response_mime_type": "application/json"}
         )
-        resp = model.generate_content(prompt)
-        return json.loads(resp.text)
+        response = model.generate_content([clean_yt_url, prompt])
+        
+        if not response or not response.text:
+            raise Exception("Empty response from AI model.")
+
+        return json.loads(response.text)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI generation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
