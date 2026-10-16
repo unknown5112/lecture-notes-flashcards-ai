@@ -4,7 +4,7 @@ import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from youtube_transcript_api import YouTubeTranscriptApi
+import youtube_transcript_api
 import google.generativeai as genai
 
 app = FastAPI()
@@ -45,20 +45,22 @@ async def generate_notes(req: LectureRequest):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL.")
 
     transcript_text = ""
-    # Standard multi-language fetch
     try:
-        data = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB', 'hi'])
-        transcript_text = " ".join([item['text'] for item in data])
-    except Exception:
-        # Fallback to default without language filter
+        # Direct module-level instance invocation
+        ytt_api = getattr(youtube_transcript_api, "YouTubeTranscriptApi", youtube_transcript_api)
+        fetch_fn = getattr(ytt_api, "get_transcript", None)
+
+        if not fetch_fn:
+            raise Exception("Library method 'get_transcript' not accessible on runtime.")
+
         try:
-            data = YouTubeTranscriptApi.get_transcript(video_id)
-            transcript_text = " ".join([item['text'] for item in data])
-        except Exception as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Transcript extraction failed: {str(e)}"
-            )
+            data = fetch_fn(video_id, languages=['en', 'en-US', 'en-GB', 'hi'])
+        except Exception:
+            data = fetch_fn(video_id)
+
+        transcript_text = " ".join([item['text'] for item in data])
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Transcript extraction failed: {str(e)}")
 
     if not transcript_text.strip():
         raise HTTPException(status_code=400, detail="Transcript text is empty.")
