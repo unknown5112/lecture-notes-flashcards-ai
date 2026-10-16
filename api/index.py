@@ -52,26 +52,18 @@ Return ONLY valid JSON matching this schema:
 }}
 """
 
-    # Direct targeted models without calling slow list_models()
-    candidate_models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"]
-    last_err = None
+    try:
+        model = genai.GenerativeModel(
+            model_name="models/gemini-3.8-flash",
+            generation_config={"response_mime_type": "application/json"}
+        )
+        resp = model.generate_content(prompt)
+        raw = resp.text.strip()
 
-    for m_name in candidate_models:
-        try:
-            model = genai.GenerativeModel(
-                model_name=m_name,
-                generation_config={"response_mime_type": "application/json"}
-            )
-            resp = model.generate_content(prompt)
-            raw = resp.text.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw)
 
-            if raw.startswith("```"):
-                raw = re.sub(r"^```(?:json)?\s*", "", raw)
-                raw = re.sub(r"\s*```$", "", raw)
-
-            return json.loads(raw)
-        except Exception as err:
-            last_err = err
-            continue
-
-    raise HTTPException(status_code=500, detail=f"AI generation failed: {str(last_err)}")
+        return json.loads(raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
