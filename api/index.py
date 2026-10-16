@@ -20,27 +20,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-def get_active_model():
-    """Returns the recommended latest model, with dynamic fallback if needed."""
-    try:
-        available = [
-            m.name for m in genai.list_models() 
-            if 'generateContent' in m.supported_generation_methods
-        ]
-        # Prefer gemini-3.8-flash first
-        for m in available:
-            if "3.8-flash" in m:
-                return m
-        # Fallback to any other flash model that is not retired
-        for m in available:
-            if "flash" in m.lower() and "2.5" not in m:
-                return m
-        if available:
-            return available[0]
-    except Exception:
-        pass
-    return "models/gemini-3.8-flash"
-
 class LectureRequest(BaseModel):
     direct_text: str
 
@@ -51,19 +30,16 @@ async def generate_notes(req: LectureRequest):
 
     text = req.direct_text.strip()
     if len(text) < 20:
-        raise HTTPException(status_code=400, detail="Text is too short. Please provide at least a couple of sentences.")
+        raise HTTPException(status_code=400, detail="Text too short. Please provide at least a couple of sentences.")
 
-    chosen_model = get_active_model()
-
-    prompt = f"""You are an elite academic educator and study tool architect.
-Analyze the following lecture material:
+    prompt = f"""You are an elite academic educator. Analyze this study material:
 \"\"\"{text[:10000]}\"\"\"
 
 Generate:
-1. A structured summary highlighting key concepts and actionable takeaways.
-2. Exactly 5 active-recall Flashcards (clear question and concise answer).
+1. A structured summary with clear Key Takeaways.
+2. Exactly 5 active-recall Flashcards (question and short answer).
 
-Format response strictly as valid JSON:
+Return ONLY valid JSON matching this schema:
 {{
   "summary": "markdown formatted notes",
   "flashcards": [
@@ -76,19 +52,26 @@ Format response strictly as valid JSON:
 }}
 """
 
-    try:
-        model = genai.GenerativeModel(model_name=chosen_model)
-        resp = model.generate_content(prompt)
-        raw_text = resp.text.strip()
+    # Direct targeted models without calling slow list_models()
+    candidate_models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"]
+    last_err = None
 
-        # Clean JSON markdown code blocks if present
-        if raw_text.startswith("```"):
-            raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
-            raw_text = re.sub(r"\s*```$", "", raw_text)
+    for m_name in candidate_models:
+        try:
+            model = genai.GenerativeModel(
+                model_name=m_name,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            resp = model.generate_content(prompt)
+            raw = resp.text.strip()
 
-        return json.loads(raw_text)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Generation failed on model '{chosen_model}': {str(e)}"
-        )
+            if raw.startswith("```"):
+                raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                raw = re.sub(r"\s*```$", "", raw)
+
+            return json.loads(raw)
+        except Exception as err:
+            last_err = err
+            continue
+
+    raise HTTPException(status_code=500, detail=f"AI generation failed: {str(last_err)}")
