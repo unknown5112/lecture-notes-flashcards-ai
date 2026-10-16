@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Lecture Note-Taker & Flashcards</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6">
+  <div class="max-w-3xl mx-auto space-y-6">
+    <div class="text-center space-y-2">
+      <h1 class="text-3xl font-extrabold text-sky-400">Lecture Note-Taker AI</h1>
+      <p class="text-slate-400 text-sm">Convert YouTube lectures into revision notes and interactive flashcards instantly.</p>
+    </div>
+
+    <!-- URL Input Form -->
+    <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-lg flex gap-3">
+      <input type="text" id="yt-url" placeholder="Paste YouTube Video URL (e.g., https://www.youtube.com/watch?v=...)" class="flex-1 bg-slate-950 border border-slate-700 px-4 py-2.5 rounded-lg text-sm focus:outline-none focus:border-sky-500">
+      <button onclick="processLecture()" id="process-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-medium px-5 py-2.5 rounded-lg text-sm transition">Generate</button>
+    </div>
+
+    <div id="loader" class="hidden text-center text-sky-400 text-sm py-4 animate-pulse">Extracting lecture transcript & generating flashcards...</div>
+    <div id="error-box" class="hidden bg-rose-950/40 border border-rose-800 text-rose-300 p-3 rounded-lg text-sm"></div>
+
+    <!-- Summary Section -->
+    <div id="results" class="hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow">
+        <h2 class="text-lg font-bold text-sky-400 mb-3">Structured Lecture Summary</h2>
+        <div id="summary-content" class="text-sm text-slate-300 leading-relaxed whitespace-pre-line"></div>
+      </div>
+
+      <!-- Flashcards Section -->
+      <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow">
+        <h2 class="text-lg font-bold text-sky-400 mb-3">Revision Flashcards</h2>
+        <div id="flashcards-list" class="grid gap-3"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function processLecture() {
+      const url = document.getElementById('yt-url').value.trim();
+      const loader = document.getElementById('loader');
+      const errBox = document.getElementById('error-box');
+      const results = document.getElementById('results');
+      const btn = document.getElementById('process-btn');
+
+      if (!url) return;
+      errBox.classList.add('hidden');
+      results.classList.add('hidden');
+      loader.classList.remove('hidden');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Error generating notes');
+
+        document.getElementById('summary-content').innerText = data.summary;
+        const list = document.getElementById('flashcards-list');
+        list.innerHTML = '';
+        data.flashcards.forEach((fc, idx) => {
+          list.innerHTML += `
+            <div class="bg-slate-950 p-4 border border-slate-800 rounded-lg">
+              <p class="text-sm font-semibold text-slate-200">Q${idx+1}: ${fc.question}</p>
+              <p class="text-xs text-slate-400 mt-2 bg-slate-900 p-2 rounded">Ans: ${fc.answer}</p>
+            </div>
+          `;
+        });
+        results.classList.remove('hidden');
+      } catch (err) {
+        errBox.innerText = err.message;
+        errBox.classList.remove('hidden');
+      } finally {
+        loader.classList.add('hidden');
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
