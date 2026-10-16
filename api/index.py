@@ -1,5 +1,4 @@
 import os
-import re
 import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,21 +25,21 @@ class LectureRequest(BaseModel):
 @app.post("/api/generate")
 async def generate_notes(req: LectureRequest):
     if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY environment variable missing on Vercel.")
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY missing in Vercel settings.")
 
-    raw_text = req.direct_text.strip()
-    if not raw_text or len(raw_text) < 20:
-        raise HTTPException(status_code=400, detail="Transcript text is missing or too short.")
+    text = req.direct_text.strip()
+    if len(text) < 20:
+        raise HTTPException(status_code=400, detail="Text is too short. Please provide at least a couple of sentences.")
 
-    prompt = f"""You are an elite academic educator and note generator.
-Analyze this lecture text:
-\"\"\"{raw_text[:12000]}\"\"\"
+    prompt = f"""You are an elite academic educator and study tool architect.
+Analyze the following lecture material:
+\"\"\"{text[:10000]}\"\"\"
 
 Generate:
-1. A structured, clear summary with bulleted Key Takeaways and Core Concepts.
-2. Exactly 5 high-yield revision Flashcards.
+1. A structured summary highlighting key concepts and actionable takeaways.
+2. Exactly 5 active-recall Flashcards (clear question and concise answer).
 
-Return ONLY strict valid JSON matching this schema:
+Format response strictly as valid JSON:
 {{
   "summary": "markdown formatted notes",
   "flashcards": [
@@ -54,17 +53,11 @@ Return ONLY strict valid JSON matching this schema:
 """
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash", generation_config={"response_mime_type": "application/json"})
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config={"response_mime_type": "application/json"}
+        )
         resp = model.generate_content(prompt)
         return json.loads(resp.text)
     except Exception as e:
-        # Fallback parsing
-        try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            resp = model.generate_content(prompt)
-            match = re.search(r'\{.*\}', resp.text, re.DOTALL)
-            if match:
-                return json.loads(match.group(0))
-            return {"summary": resp.text, "flashcards": []}
-        except Exception as e2:
-            raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e2)}")
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
